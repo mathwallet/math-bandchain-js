@@ -6,7 +6,7 @@
 
 ```
 // config network
-var netwo/Users/Forrest/Documents/GitHub/math-okchain-js/README.mdrk = {
+var network = {
     blockchain: "bandchain",
     chainId: "band-wenchang-mainnet"
 };
