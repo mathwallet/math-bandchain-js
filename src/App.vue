@@ -11,10 +11,18 @@
         </v-card>
 
         <v-card light class="mt-2" v-if="account">
-          <v-card-title>Signature</v-card-title>
-          <v-card-subtitle>{{signature?JSON.stringify(signature):""}}</v-card-subtitle>
+          <v-card-title>Transfer</v-card-title>
+          <v-card-subtitle>
+            <v-text-field
+              label="Recipient"
+              v-model="recipient"
+              placeholder="band19r4ta37cnd6yxcpu9qsyf37qhgjmhgsde46vnw"
+              filled
+            ></v-text-field>
+            <v-text-field label="Amount" v-model="amount" placeholder="0.1" filled></v-text-field>
+          </v-card-subtitle>
           <v-card-actions>
-            <v-btn class="success" @click="requestSignature">Signature</v-btn>
+            <v-btn class="success" @click="requestSignature">Send</v-btn>
           </v-card-actions>
         </v-card>
       </v-container>
@@ -31,14 +39,19 @@ export default {
         blockchain: "bandchain",
         chainId: "band-wenchang-mainnet"
       },
+      provider: null,
       account: null,
-      signature: null
+      recipient: "band19r4ta37cnd6yxcpu9qsyf37qhgjmhgsde46vnw",
+      amount: ""
     };
   },
   methods: {
     login() {
       window.mathExtension.getIdentity(this.network).then(account => {
         this.account = account;
+        this.provider = window.mathExtension.httpProvider(
+          "https://api-wm-lb.bandchain.org"
+        );
       });
     },
     logout() {
@@ -47,44 +60,80 @@ export default {
       });
     },
     requestSignature() {
-      const transaction = {
-        account_number: 364,
-        chain_id: "band-wenchang-mainnet",
-        fee: {
-          amount: [
-            {
-              amount: "30",
-              denom: "uband"
-            }
-          ],
-          gas: "200000"
-        },
-        memo: "",
-        msgs: [
-          {
-            type: "cosmos-sdk/MsgSend",
-            value: {
-              amount: [
+      this.provider
+        .get(`/auth/accounts/${this.account.account}`)
+        .then(response => {
+          console.log("response => ", response);
+
+          if (response.status == 200) {
+            const chainAccount = response.result.result.value;
+            const transaction = {
+              account_number: chainAccount.account_number,
+              chain_id: this.network.chainId,
+              fee: {
+                amount: [
+                  {
+                    amount: "30",
+                    denom: "uband"
+                  }
+                ],
+                gas: "200000"
+              },
+              memo: "",
+              msgs: [
                 {
-                  amount: "10000",
-                  denom: "uband"
+                  type: "cosmos-sdk/MsgSend",
+                  value: {
+                    amount: [
+                      {
+                        amount: `${
+                          this.amount.length
+                            ? parseFloat(this.amount) * 1000000
+                            : 0
+                        }`,
+                        denom: "uband"
+                      }
+                    ],
+                    from_address: this.account.account,
+                    to_address: "band19r4ta37cnd6yxcpu9qsyf37qhgjmhgsde46vnw"
+                  }
                 }
               ],
-              from_address: "band1kt0j6u2008upydua0f58p87yet0k40yd24fy4h",
-              to_address: "band1kt0j6u2008upydua0f58p87yet0k40yd24fy4h"
-            }
+              sequence: chainAccount.sequence
+            };
+            // 请求插件签名
+            window.mathExtension
+              .requestSignature(transaction)
+              .then(signature => {
+                // Broadcast
+                const broadcatTx = {
+                  msg: transaction.msgs,
+                  fee: transaction.fee,
+                  memo: transaction.memo,
+                  signatures: [signature]
+                };
+                const opts = {
+                  data: { tx: broadcatTx, mode: "sync" },
+                  headers: {
+                    "Content-Type": "text/plain"
+                  }
+                };
+                this.provider
+                  .post("/txs", null, opts)
+                  .then(response2 => {
+                    console.log(response2);
+                  })
+                  .catch(err2 => {
+                    console.log(err2);
+                  });
+              })
+              .catch(e => {
+                console.log(e);
+              });
           }
-        ],
-        sequence: 6
-      };
-      // 请求插件签名
-      window.mathExtension
-        .requestSignature(transaction, this.network)
-        .then(signatrue => {
-          this.signature = signatrue;
         })
-        .catch(e => {
-          console.log(e);
+        .catch(error => {
+          console.log(error);
         });
     }
   }
