@@ -2,24 +2,31 @@
   <v-app>
     <v-content>
       <v-container fluid>
-        <v-card class="mx-auto">
-          <v-card-title>{{account?account.account:"Open MathWallet"}}</v-card-title>
+        <v-card>
+          <v-card-title>{{identity?identity.account:"Open MathWallet"}}</v-card-title>
           <v-card-actions>
-            <v-btn class="primary" @click="login" v-if="!account">Log in</v-btn>
+            <v-btn class="primary" @click="login" v-if="!identity">Log in</v-btn>
             <v-btn class="warning" @click="logout" v-else>Log out</v-btn>
           </v-card-actions>
         </v-card>
 
-        <v-card light class="mt-2" v-if="account">
+        <v-card light class="mt-2" v-if="identity">
           <v-card-title>Transfer</v-card-title>
           <v-card-subtitle>
             <v-text-field
               label="Recipient"
               v-model="recipient"
-              placeholder="band19r4ta37cnd6yxcpu9qsyf37qhgjmhgsde46vnw"
+              placeholder="gard18pgvd6dlhnt43l6t3ev0glyk4tflq2ld60tdy4"
               filled
             ></v-text-field>
-            <v-text-field label="Amount" v-model="amount" placeholder="0.1" filled></v-text-field>
+            <v-text-field
+              label="Amount"
+              v-model="amount"
+              placeholder="0.1"
+              :hint="balance"
+              persistent-hint
+              filled
+            ></v-text-field>
           </v-card-subtitle>
           <v-card-actions>
             <v-btn class="success" @click="requestSignature">Send</v-btn>
@@ -31,112 +38,116 @@
 </template>
 
 <script>
+import { formatAmount, parseAmount } from "./utils/Format";
 export default {
   name: "App",
   data() {
     return {
-      network: {
-        blockchain: "bandchain",
-        chainId: "band-wenchang-mainnet"
-      },
+      rpcURL: "https://rest.hashgard.com/gard/api",
       provider: null,
-      account: null,
-      recipient: "band19r4ta37cnd6yxcpu9qsyf37qhgjmhgsde46vnw",
-      amount: ""
+      identity: null,
+      balance: "",
+      recipient: "gard18pgvd6dlhnt43l6t3ev0glyk4tflq2ld60tdy4",
+      amount: "",
     };
   },
   methods: {
     login() {
-      window.mathExtension.getIdentity(this.network).then(account => {
-        this.account = account;
-        this.provider = window.mathExtension.httpProvider(
-          "https://api-wm-lb.bandchain.org"
-        );
-      });
+      window.mathExtension
+        .getIdentity({
+          blockchain: "hashgard",
+          chainId: "hashgard",
+        })
+        .then((identity) => {
+          this.identity = identity;
+          this.provider = window.mathExtension.httpProvider(this.rpcURL);
+          this.getBalance();
+        });
     },
     logout() {
       window.mathExtension.forgetIdentity().then(() => {
-        this.account = null;
+        this.identity = null;
       });
     },
-    requestSignature() {
+    getBalance() {
       this.provider
-        .get(`/auth/accounts/${this.account.account}`)
-        .then(response => {
-          console.log("response => ", response);
-
+        .get(`/bank/balances/${this.identity.account}`)
+        .then((response) => {
           if (response.status == 200) {
-            const chainAccount = response.result.result.value;
-            const transaction = {
-              account_number: chainAccount.account_number,
-              chain_id: this.network.chainId,
-              fee: {
-                amount: [
-                  {
-                    amount: "30",
-                    denom: "uband"
-                  }
-                ],
-                gas: "200000"
-              },
-              memo: "",
-              msgs: [
-                {
-                  type: "cosmos-sdk/MsgSend",
-                  value: {
-                    amount: [
-                      {
-                        amount: `${
-                          this.amount.length
-                            ? parseFloat(this.amount) * 1000000
-                            : 0
-                        }`,
-                        denom: "uband"
-                      }
-                    ],
-                    from_address: this.account.account,
-                    to_address: "band19r4ta37cnd6yxcpu9qsyf37qhgjmhgsde46vnw"
-                  }
-                }
-              ],
-              sequence: chainAccount.sequence
-            };
-            // 请求插件签名
-            window.mathExtension
-              .requestSignature(transaction)
-              .then(signature => {
-                // Broadcast
-                const broadcatTx = {
-                  msg: transaction.msgs,
-                  fee: transaction.fee,
-                  memo: transaction.memo,
-                  signatures: [signature]
-                };
-                const opts = {
-                  data: { tx: broadcatTx, mode: "sync" },
-                  headers: {
-                    "Content-Type": "text/plain"
-                  }
-                };
-                this.provider
-                  .post("/txs", null, opts)
-                  .then(response2 => {
-                    console.log(response2);
-                  })
-                  .catch(err2 => {
-                    console.log(err2);
-                  });
-              })
-              .catch(e => {
-                console.log(e);
-              });
+            this.balance =
+              response.result.result.length > 0
+                ? formatAmount(response.result.result[0].amount, 6)
+                : "";
           }
-        })
-        .catch(error => {
-          console.log(error);
         });
-    }
-  }
+    },
+    async getAccountNumberAndSequence() {
+      const res = await this.provider.get(
+        `/auth/accounts/${this.identity.account}`
+      );
+      return {
+        account_number: res.result.result.value.account_number,
+        sequence: res.result.result.value.sequence,
+      };
+    },
+    requestSignature() {
+      this.getAccountNumberAndSequence().then(
+        ({ account_number, sequence }) => {
+          const transaction = {
+            sequence: sequence,
+            account_number: account_number,
+            chain_id: "hashgard",
+            fee: {
+              amount: [
+                {
+                  amount: "1000",
+                  denom: "ugard",
+                },
+              ],
+              gas: "200000",
+            },
+            memo: "",
+            msgs: [
+              {
+                type: "cosmos-sdk/MsgSend",
+                value: {
+                  amount: [
+                    {
+                      amount: parseAmount(this.amount, 6),
+                      denom: "ugard",
+                    },
+                  ],
+                  from_address: this.identity.account,
+                  to_address: this.recipient,
+                },
+              },
+            ],
+          };
+          // 请求插件签名
+          window.mathExtension
+            .requestSignature(transaction)
+            .then((signature) => {
+              // Broadcast
+              const broadcatTx = {
+                msg: transaction.msgs,
+                fee: transaction.fee,
+                memo: transaction.memo,
+                signatures: [signature],
+              };
+              const opts = {
+                data: { tx: broadcatTx, mode: "sync" },
+                headers: {
+                  "Content-Type": "text/plain",
+                },
+              };
+              this.provider.post("/txs", null, opts).then((response2) => {
+                console.log(response2);
+              });
+            });
+        }
+      );
+    },
+  },
 };
 </script>
 
