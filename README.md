@@ -1,14 +1,14 @@
 
 # For Math Wallet DAPP Developer
 
-## Using Math Wallet Hashgard JS API
+## Using Math Wallet BandChain JS API
 
 
 ```
 // config network
 var network = {
-    blockchain: "hashgard",
-    chainId: "hashgard"
+    blockchain: "bandchain",
+    chainId: "band-wenchang-mainnet"
 };
 
 // login
